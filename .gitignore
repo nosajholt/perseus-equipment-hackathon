@@ -20,3 +20,15 @@ dist/
 *.suo
 Thumbs.db
 .DS_Store
+
+# Frontend browser libraries - restored by `npm install` (see scripts/vendor.js)
+app/static/vendor/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# SQLite sidecar files
+*.db-wal
+*.db-shm
+*.db-journal

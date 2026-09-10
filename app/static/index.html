@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Perseus BI</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div id="root">
+      <div class="boot">Loading dashboard...</div>
+    </div>
+
+    <script src="/static/vendor/react.production.min.js"></script>
+    <script src="/static/vendor/react-dom.production.min.js"></script>
+    <script src="/static/vendor/echarts.min.js"></script>
+    <script src="/static/vendor/babel.min.js"></script>
+    <!-- Babel standalone fetches and runs these in document order and they all
+         share one global scope, so shared primitives come first and the shell
+         that mounts the tabs comes last. -->
+    <script type="text/babel" data-presets="react" src="/static/lib.jsx"></script>
+    <script type="text/babel" data-presets="react" src="/static/tab-overview.jsx"></script>
+    <script type="text/babel" data-presets="react" src="/static/tab-units.jsx"></script>
+    <script type="text/babel" data-presets="react" src="/static/tab-parts.jsx"></script>
+    <script type="text/babel" data-presets="react" src="/static/tab-service.jsx"></script>
+    <script type="text/babel" data-presets="react" src="/static/tab-rental.jsx"></script>
+    <script type="text/babel" data-presets="react" src="/static/tab-customers.jsx"></script>
+    <script type="text/babel" data-presets="react" src="/static/app.jsx"></script>
+  </body>
+</html>

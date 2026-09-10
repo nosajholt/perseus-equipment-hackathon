@@ -1,0 +1,16 @@
+{
+  "name": "perseus-equipment-hackathon",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Perseus BI Dashboard - browser libraries for the no-bundler frontend in app/static.",
+  "scripts": {
+    "vendor": "node scripts/vendor.js",
+    "postinstall": "node scripts/vendor.js"
+  },
+  "dependencies": {
+    "@babel/standalone": "7.26.4",
+    "echarts": "5.5.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}

@@ -249,3 +249,9 @@ Suggested first steps:
 8. Polish the experience for a business demo.
 
 Have fun building something that helps Perseus Equipment make faster, smarter decisions.
+
+## Running this branch's dashboard
+
+This branch contains a FastAPI + React BI dashboard built for the challenge
+above. See [RUNNING.md](RUNNING.md) for setup and run instructions, including
+where to place `perseus_equipment_database.db` and the `PERSEUS_DB` override.
