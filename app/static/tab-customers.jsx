@@ -36,11 +36,15 @@ function CustomersKpis({ params }) {
       note: `${compactMoney(d.top10_revenue)} concentrated`,
       tone: d.top10_share_pct > 50 ? "warn" : null,
     },
-    { label: "New Accounts", value: num(d.new_customers), note: "first purchase in range" },
+    {
+      label: "New Accounts",
+      value: num(d.new_customers),
+      note: "first purchase in range, still buying",
+    },
     {
       label: "At Risk",
       value: num(d.at_risk),
-      note: `${num(d.churned)} churned over a year`,
+      note: `quiet 6-12 months; ${num(d.churned)} past a year`,
       tone: d.at_risk > 0 ? "warn" : null,
     },
     {
@@ -256,9 +260,11 @@ function CustomersSegmentPanel({ data, loading, error, onDrill }) {
             </tbody>
           </table>
           <Caveat>
-            Recency is measured from the end of the date filter, not from today, so
-            moving the window re-classifies every account against that date. At risk is
-            up to a year since the last purchase; churned is beyond that.
+            Bands are days since the last purchase, measured from the end of the date
+            filter rather than from today: active within 6 months, at risk 6-12 months,
+            churned beyond a year. New is a first-ever purchase inside the window that
+            is also still recent. Revenue is window revenue, so a churned account shows
+            history but no revenue here.
           </Caveat>
         </React.Fragment>
       </Body>

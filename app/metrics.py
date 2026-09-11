@@ -34,7 +34,7 @@ which by itself accounts for the entire apparent 2023 revenue spike.
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from . import db
@@ -3368,17 +3368,29 @@ CUSTOMER_SEGMENTS = ["New", "Active", "At risk", "Churned", "Never purchased"]
 CREDIT_BANDS = ["none", "under $5k", "$5k-$10k", "$10k-$25k", "$25k-$50k", "$50k+"]
 
 
-def _customer_segment(row: dict[str, Any], window_start: str) -> str:
-    """Where an account sits relative to the selected window.
+def _customer_segment(row: dict[str, Any], new_since: str) -> str:
+    """Where an account sits, by how recently it last bought.
 
     Recency runs from the end of the window rather than today, so the filter bar
     moves the classification with it instead of always describing the present.
+
+    The bands are fixed at 180 and 365 days rather than 'bought inside the
+    window', which would make At risk structurally empty on any window of a year
+    or more. `new_since` is likewise capped at a year before the window end, or
+    every account would count as new once the window covers all history. A new
+    account that has already gone quiet is reported as at risk, which is the
+    more useful thing to know about it.
     """
-    if row["revenue_in_window"]:
-        return "New" if (row["first_purchase"] or "") >= window_start else "Active"
     if row["last_purchase"] is None:
         return "Never purchased"
-    return "At risk" if (row["recency_days"] or 0) <= 365 else "Churned"
+    recency = row["recency_days"] or 0
+    if recency > 365:
+        return "Churned"
+    if recency > 180:
+        return "At risk"
+    if row["invoices_in_window"] and (row["first_purchase"] or "") >= new_since:
+        return "New"
+    return "Active"
 
 
 def _credit_band(limit: float | None) -> str:
@@ -3490,8 +3502,9 @@ def _customer_rows(start: str, end: str) -> list[dict[str, Any]]:
             _customer_body(),
             {**_bounds(start, end), "as_of": end, "as_of_end": f"{end} 23:59:59"},
         )
+        new_since = max(start, (date.fromisoformat(end) - timedelta(days=365)).isoformat())
         for r in rows:
-            r["segment"] = _customer_segment(r, start)
+            r["segment"] = _customer_segment(r, new_since)
             r["credit_band"] = _credit_band(r["credit_limit"])
             r["class"] = r["class"] or "Unclassified"
         return rows
@@ -3503,7 +3516,7 @@ def customers_summary(start: str, end: str) -> dict[str, Any]:
     def build() -> dict[str, Any]:
         rows = _customer_rows(start, end)
 
-        active = [r for r in rows if r["revenue_in_window"]]
+        active = [r for r in rows if r["invoices_in_window"]]
         revenue = sum(r["revenue_in_window"] for r in active)
         by_segment: dict[str, int] = {}
         for r in rows:
@@ -3526,10 +3539,15 @@ def customers_summary(start: str, end: str) -> dict[str, Any]:
 
         return {
             "customers_on_file": len(rows),
+            # Transacted in the window, whatever the invoice was worth; the
+            # segment counts below are recency bands and answer a different
+            # question, so the two do not add up to each other.
             "active": len(active),
+            "recently_active": by_segment.get("Active", 0) + by_segment.get("New", 0),
             "new_customers": by_segment.get("New", 0),
             "at_risk": by_segment.get("At risk", 0),
             "churned": by_segment.get("Churned", 0),
+            "never_purchased": by_segment.get("Never purchased", 0),
             "revenue": revenue,
             "gross_profit": sum(r["gross_profit_in_window"] for r in rows),
             "revenue_per_customer": (revenue / len(active)) if active else None,
@@ -3574,7 +3592,7 @@ def customers_charts(start: str, end: str) -> dict[str, Any]:
                     },
                 )
                 bucket["customers"] += 1
-                bucket["active"] += 1 if src["revenue_in_window"] else 0
+                bucket["active"] += 1 if src["invoices_in_window"] else 0
                 bucket["revenue"] += src["revenue_in_window"] or 0.0
                 bucket["gross_profit"] += src["gross_profit_in_window"] or 0.0
                 bucket["credit_limit"] += src["credit_limit"] or 0.0
@@ -3650,7 +3668,7 @@ def customers_charts(start: str, end: str) -> dict[str, Any]:
                 ),
             )
             for r in sorted(
-                (r for r in rows if not r["revenue_in_window"] and r["last_purchase"]),
+                (r for r in rows if not r["invoices_in_window"] and r["last_purchase"]),
                 key=lambda r: r["revenue_all_time"],
                 reverse=True,
             )[:15]
