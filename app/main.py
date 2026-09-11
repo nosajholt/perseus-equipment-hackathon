@@ -169,6 +169,41 @@ PAGE_SIZE = Query(25, ge=5, le=metrics.MAX_PAGE_SIZE)
 DIRECTION = Query("desc", pattern="^(asc|desc)$")
 
 
+# ------------------------------------------------------------------- invoices
+
+
+@app.get("/api/invoices/detail")
+def api_invoices_detail(
+    start: str | None = None,
+    end: str | None = None,
+    page: int = PAGE,
+    page_size: int = PAGE_SIZE,
+    sort: str | None = None,
+    dir: str = DIRECTION,
+    status: str | None = None,
+    invoice_type: str | None = None,
+    salesperson: str | None = None,
+    customer_no: str | None = None,
+    period: str | None = None,
+    search: str | None = None,
+) -> dict:
+    s, e = _range(start, end)
+    return metrics.invoices_detail(
+        s,
+        e,
+        page,
+        page_size,
+        sort,
+        dir,
+        status,
+        invoice_type,
+        salesperson,
+        customer_no,
+        period,
+        search,
+    )
+
+
 # --------------------------------------------------------------- units / sales
 
 

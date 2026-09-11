@@ -75,7 +75,7 @@ preset and not a sign of a problem.
 
 | Tab | What it covers |
 | --- | --- |
-| Executive Overview | Company-wide revenue, gross profit and margin KPIs with trend, department mix, and a data-quality panel explaining exclusions such as quote-only lines |
+| Executive Overview | Company-wide revenue, gross profit and margin KPIs with trend, department mix, a data-quality panel explaining exclusions such as quote-only lines, and an invoice register searchable by invoice number, document number, customer name or customer number |
 | Units / Sales | Equipment sales performance by category, condition, make and salesperson, plus unit inventory ageing |
 | Parts | Parts revenue and margin by part group, manufacturer and stocking class, plus stock-on-hand buckets |
 | Service | Work-order revenue and labour recovery by bill-as type, status and technician, plus WIP ageing |

@@ -81,7 +81,7 @@ function OverviewKpis({ params }) {
 
 /* ----------------------------------------------------------- trend + mix */
 
-function TrendPanel({ params, grain, onGrain }) {
+function TrendPanel({ params, grain, onGrain, onDrill }) {
   const { loading, data, error } = useEndpoint("/api/trend", { ...params, grain });
 
   const option = useMemo(() => {
@@ -191,9 +191,22 @@ function TrendPanel({ params, grain, onGrain }) {
   return (
     <Panel
       title="Revenue & Gross Margin Trend"
+      hint={onDrill ? "click a bar for that period's invoices" : undefined}
       right={<Segmented value={grain} options={GRAINS} onChange={onGrain} />}
     >
-      {loading ? <Loading /> : error ? <Err msg={error} /> : <EChart option={option} height={356} />}
+      {loading ? (
+        <Loading />
+      ) : error ? (
+        <Err msg={error} />
+      ) : (
+        <EChart
+          option={option}
+          height={356}
+          // The bar's own label is the period the register filters on, so the
+          // drill-down works the same at every grain without recomputing dates.
+          onClick={onDrill ? (p) => onDrill({ period: p.name }) : undefined}
+        />
+      )}
     </Panel>
   );
 }
@@ -570,15 +583,90 @@ function RentalSummaryPanel({ params }) {
   );
 }
 
+/* ------------------------------------------------------- invoice register */
+
+/* README calls these 'common invoice types': `in` standard, `wo` work order,
+ * `rl` rental. The column is two characters in the data, which means nothing to
+ * a manager, so it is spelled out. */
+const INVOICE_TYPE_LABELS = { in: "Invoice", wo: "Work order", rl: "Rental" };
+
+const INVOICE_COLUMNS = [
+  col.date("activity_date", "Date"),
+  col.text("doc_no", "Doc #"),
+  col.text("invoice_no", "Invoice #"),
+  col.text("customer_no", "Cust #"),
+  col.text("customer_name", "Customer", {
+    render: (r) => <span className="name">{text(r.customer_name)}</span>,
+  }),
+  col.text("invoice_type", "Type", {
+    render: (r) => text(INVOICE_TYPE_LABELS[r.invoice_type] || r.invoice_type),
+  }),
+  col.text("status", "Status", {
+    hint: "Only the posted statuses count as revenue: finalized and archived",
+  }),
+  col.text("salesperson", "Salesperson"),
+  col.num("lines", "Lines"),
+  col.money("revenue", "Revenue", {
+    hint: "Summed from the invoice's revenue lines, excluding trade-ins and quote lines",
+  }),
+  col.money("gross_profit", "GP (Units+Parts)", {
+    hint: "Gross profit exists only for Units and Parts lines",
+  }),
+  col.pct("margin_pct", "GM %", {
+    hint: "Gross profit over costed revenue, matching the KPI definition",
+  }),
+  col.money("trade_in_allowance", "Trade-In", {
+    hint: "Value allowed against the deal; tracked separately, never netted off revenue",
+  }),
+  col.money("total_invoice", "Invoice Total", {
+    hint: "InvoiceHeader.TotalInvoice, which also carries tax and misc charges",
+  }),
+];
+
+/** The drill-down target for the Revenue and Invoices KPIs.
+ *
+ * Its row count and revenue tie exactly to those two cards, because it admits
+ * exactly the invoices they count: posted status, and at least one line that is
+ * neither a trade-in nor a quote.
+ */
+function InvoiceRegisterPanel({ params, filters, onFilters }) {
+  return (
+    <Panel
+      title="Invoice Register"
+      hint="every posted invoice behind the KPIs above"
+    >
+      <DataTable
+        path="/api/invoices/detail"
+        params={params}
+        columns={INVOICE_COLUMNS}
+        filters={filters}
+        onFilters={onFilters}
+        defaultSort="activity_date"
+        searchHint="Search invoice #, doc #, customer name or #"
+        note="Revenue is summed from the invoice's own revenue lines, so it will not match the invoice total, which also carries tax, miscellaneous charges, trade-ins and quote lines. Searching covers the whole register, not just the page on screen."
+      />
+    </Panel>
+  );
+}
+
 /* ------------------------------------------------------------------- tab */
 
 function OverviewTab({ params, grain, onGrain, onGoTab }) {
+  // The trend hands the register a period so a bar click narrows it to that
+  // month, quarter or year; it shows up as a removable chip on the table.
+  const [invoiceFilters, setInvoiceFilters] = useState({});
+
   return (
     <React.Fragment>
       <OverviewKpis params={params} />
 
       <div className="grid g-trend">
-        <TrendPanel params={params} grain={grain} onGrain={onGrain} />
+        <TrendPanel
+          params={params}
+          grain={grain}
+          onGrain={onGrain}
+          onDrill={(f) => setInvoiceFilters((prev) => ({ ...prev, ...f }))}
+        />
         <MixPanel params={params} />
       </div>
 
@@ -596,6 +684,12 @@ function OverviewTab({ params, grain, onGrain, onGoTab }) {
           <RentalSummaryPanel params={params} />
         </div>
       </div>
+
+      <InvoiceRegisterPanel
+        params={params}
+        filters={invoiceFilters}
+        onFilters={setInvoiceFilters}
+      />
     </React.Fragment>
   );
 }

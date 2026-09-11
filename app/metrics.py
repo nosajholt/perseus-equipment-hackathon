@@ -1210,6 +1210,162 @@ def _titled(value: str | None) -> str:
     return (value or "").title() or "Unspecified"
 
 
+# ============================================================ INVOICE REGISTER
+
+
+def _invoice_register_cte() -> str:
+    """One row per booked invoice that carries revenue lines.
+
+    This is the drill-down target for the Overview KPIs, so it admits exactly the
+    invoices those KPIs count: status alone defines booked business, `IsActive` is
+    deliberately not filtered because it is 0 on every archived invoice, and an
+    invoice qualifies only if it has at least one line that is neither a trade-in
+    nor a quote. That drops the booked headers with no detail rows at all and the
+    handful whose only lines are trade-ins or quotes, which is why the register's
+    total matches the Invoices KPI rather than the raw booked header count.
+
+    Revenue is summed from the line items, not from InvoiceHeader.TotalInvoice:
+    the header total carries tax and miscellaneous charges and is not restricted
+    to revenue-bearing lines. Both are shown so the gap is visible rather than
+    hidden. Gross profit covers Units and Parts lines only, the sole lines with a
+    cost basis, and the margin is taken over that costed revenue to match the KPI.
+    """
+    return f"""
+    WITH invoice_totals AS (
+        SELECT
+            d.InvoiceDocId                                             AS invoice_doc_id,
+            COUNT(*)                                                   AS lines,
+            SUM(CASE WHEN d.ItemType NOT IN {NON_REVENUE_ITEM_TYPES}
+                     THEN d.NetExt ELSE 0 END)                         AS revenue,
+            SUM(CASE WHEN d.ItemType IN {COSTED_ITEM_TYPES}
+                     THEN d.NetExt ELSE 0 END)                         AS costed_revenue,
+            SUM(CASE WHEN d.ItemType IN {COSTED_ITEM_TYPES}
+                     THEN d.NetExt - ({_cost_case()}) ELSE 0 END)      AS gross_profit,
+            SUM(CASE WHEN d.ItemType = 'TR' THEN -d.NetExt ELSE 0 END) AS trade_in_allowance
+        FROM InvoiceDetail d
+        JOIN InvoiceHeader ih ON ih.InvoiceDocId = d.InvoiceDocId
+        WHERE ih.Status IN {BOOKED_STATUSES}
+          AND ih.ActivityDate >= :start AND ih.ActivityDate <= :end
+        GROUP BY d.InvoiceDocId
+        HAVING SUM(CASE WHEN d.ItemType NOT IN {NON_REVENUE_ITEM_TYPES} THEN 1 ELSE 0 END) > 0
+    ),
+    invoices AS (
+        SELECT
+            date(h.ActivityDate)                            AS activity_date,
+            COALESCE(NULLIF(TRIM(h.InvoiceNo), ''), '(none)') AS invoice_no,
+            COALESCE(NULLIF(TRIM(h.DocNo), ''), '(none)')     AS doc_no,
+            h.Status                                        AS status,
+            COALESCE(NULLIF(TRIM(h.InvoiceType), ''), '??') AS invoice_type,
+            TRIM(h.CustomerNo)                              AS customer_no,
+            h.CustomerName                                  AS customer_name,
+            TRIM(h.SalesPersonName)                         AS salesperson,
+            t.lines                                         AS lines,
+            t.revenue                                       AS revenue,
+            t.gross_profit                                  AS gross_profit,
+            t.trade_in_allowance                            AS trade_in_allowance,
+            h.TotalInvoice                                  AS total_invoice,
+            CASE WHEN t.costed_revenue <> 0
+                 THEN t.gross_profit / t.costed_revenue * 100 END AS margin_pct
+        FROM InvoiceHeader h
+        JOIN invoice_totals t ON t.invoice_doc_id = h.InvoiceDocId
+        WHERE h.Status IN {BOOKED_STATUSES}
+          AND h.ActivityDate >= :start AND h.ActivityDate <= :end
+    )
+    """
+
+
+_INVOICE_SORTS = {
+    "activity_date": "activity_date",
+    "invoice_no": "invoice_no",
+    "doc_no": "doc_no",
+    "status": "status",
+    "invoice_type": "invoice_type",
+    "customer_no": "customer_no",
+    "customer_name": "customer_name",
+    "salesperson": "salesperson",
+    "lines": "lines",
+    "revenue": "revenue",
+    "gross_profit": "gross_profit",
+    "margin_pct": "margin_pct",
+    "trade_in_allowance": "trade_in_allowance",
+    "total_invoice": "total_invoice",
+}
+
+
+def invoices_detail(
+    start: str,
+    end: str,
+    page: int = 1,
+    page_size: int = 25,
+    sort: str | None = None,
+    direction: str = "desc",
+    status: str | None = None,
+    invoice_type: str | None = None,
+    salesperson: str | None = None,
+    customer_no: str | None = None,
+    period: str | None = None,
+    search: str | None = None,
+) -> dict[str, Any]:
+    """The invoice register, searchable by invoice number or customer.
+
+    Every filter is bound as a parameter, so a customer name carrying an
+    apostrophe is matched as text and can never reach the SQL as syntax.
+    """
+    conditions: list[str] = []
+    params: dict[str, Any] = dict(_bounds(start, end))
+    _optional(conditions, params, "status = :status", "status", status)
+    _optional(conditions, params, "invoice_type = :invoice_type", "invoice_type", invoice_type)
+    _optional(conditions, params, "salesperson = :salesperson", "salesperson", salesperson)
+    _optional(conditions, params, "customer_no = :customer_no", "customer_no", customer_no)
+    # A trend bar hands over its own label, and the shape of that label follows
+    # the grain it was drawn at: '2024', '2024-03' or '2024-Q1'. The first two are
+    # prefixes of an ISO date, but a quarter label is not, so matching it as a
+    # prefix silently returns nothing. Quarters are compared against the same
+    # expression the trend groups by instead.
+    if period and "Q" in period.upper():
+        _optional(
+            conditions,
+            params,
+            f"{_period_expr('quarter', 'activity_date')} = :period",
+            "period",
+            period.upper(),
+        )
+    else:
+        _optional(
+            conditions,
+            params,
+            "activity_date LIKE :period",
+            "period",
+            f"{period}%" if period else None,
+        )
+    _optional(
+        conditions,
+        params,
+        "(invoice_no LIKE :search OR doc_no LIKE :search "
+        "OR customer_name LIKE :search OR customer_no LIKE :search)",
+        "search",
+        f"%{search}%" if search else None,
+    )
+
+    body = f"""
+    {_invoice_register_cte()}
+    SELECT * FROM invoices
+    {_where(conditions)}
+    """
+
+    return _paged(
+        "invoices_detail",
+        body,
+        _INVOICE_SORTS,
+        "revenue",
+        params,
+        page,
+        page_size,
+        sort,
+        direction,
+    )
+
+
 # ================================================================= UNITS/SALES
 
 
